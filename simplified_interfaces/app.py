@@ -46,77 +46,6 @@ def gradio_reset(chat_state, img_list):
     )
 
 
-def upload_img(gr_img, gr_video, chat_state, num_segments):
-    # print(gr_img, gr_video)
-    chat_state = EasyDict(
-        {"system": "", "roles": ("Human", "Assistant"), "messages": [], "sep": "###"}
-    )
-    img_list = []
-    if gr_img is None and gr_video is None:
-        return None, None, gr.update(interactive=True), chat_state, None
-    if gr_video:
-        llm_message, img_list, chat_state = chat.upload_video(
-            gr_video, chat_state, img_list, num_segments
-        )
-        return (
-            gr.update(interactive=True),
-            gr.update(interactive=True),
-            gr.update(interactive=True, placeholder="Type and press Enter"),
-            gr.update(value="Start Chatting", interactive=False),
-            chat_state,
-            img_list,
-        )
-    if gr_img:
-        llm_message, img_list, chat_state = chat.upload_img(
-            gr_img, chat_state, img_list
-        )
-        return (
-            gr.update(interactive=True),
-            gr.update(interactive=True),
-            gr.update(interactive=True, placeholder="Type and press Enter"),
-            gr.update(value="Start Chatting", interactive=False),
-            chat_state,
-            img_list,
-        )
-
-
-def gradio_ask(user_message, chatbot, chat_state):
-    if len(user_message) == 0:
-        return (
-            gr.update(interactive=True, placeholder="Input should not be empty!"),
-            chatbot,
-            chat_state,
-        )
-    # print(chat_state)
-    chat_state = chat.ask(user_message, chat_state)
-    chatbot = chatbot + [[user_message, None]]
-
-    return "", chatbot, chat_state
-
-
-def gradio_answer(
-    gr_img, gr_video, chatbot, chat_state, img_list, num_beams, temperature
-):
-    llm_message, llm_message_token, chat_state = chat.answer(
-        conv=chat_state,
-        img_list=img_list,
-        max_new_tokens=1000,
-        num_beams=num_beams,
-        temperature=temperature,
-    )
-    llm_message = llm_message.replace("<s>", "")  # handle <s>
-
-    print(f"llm_message-->", llm_message)
-    print(f"chatbot-->", chatbot)
-
-    chatbot[-1][1] = llm_message
-    print(f"========{gr_img}##<BOS>##{gr_video}========")
-    print(chat_state, flush=True)
-    print(f"========{gr_img}##<END>##{gr_video}========")
-    # print(f"Answer: {llm_message}")
-    return chatbot, chat_state, img_list
-
-
 class OpenGVLab(gr.themes.base.Base):
     def __init__(
         self,
@@ -176,6 +105,10 @@ def handle_describe_button(
     num_beams,
     temperature,
 ):
+
+    print(f"chatbot: {chatbot}")
+    print(f"chat_state: {chat_state}")
+    
     # Step 1: upload_img
     chat_state = EasyDict(
         {"system": "", "roles": ("Human", "Assistant"), "messages": [], "sep": "###"}
@@ -306,17 +239,5 @@ with gr.Blocks(
         ],
         [chatbot, chat_state, img_list],
     )
-
-    # describe_button.click(
-    #     upload_img,
-    #     [up_image, up_video, chat_state, num_segments],
-    #     [up_image, up_video, text_input, describe_button, chat_state, img_list],
-    # ).then(
-    #     gradio_ask, [text_input, chatbot, chat_state], [text_input, chatbot, chat_state]
-    # ).then(
-    #     gradio_answer,
-    #     [up_image, up_video, chatbot, chat_state, img_list, num_beams, temperature],
-    #     [chatbot, chat_state, img_list],
-    # )
 
 demo.launch(server_name="0.0.0.0", enable_queue=True)
