@@ -95,40 +95,63 @@ title = ""
 description = ""
 
 
-def handle_describe_button(
+def handle_describe_image(
     gr_img,
+    chat_state,
+    user_message,
+    num_beams,
+    temperature,
+):
+    chat_state = EasyDict(
+        {"system": "", "roles": ("Human", "Assistant"), "messages": [], "sep": "###"}
+    )
+    img_list = []
+
+    if gr_img is None:
+        return None, None, gr.update(interactive=True), chat_state, None
+
+    llm_message, img_list, chat_state = chat.upload_img(gr_img, chat_state, img_list)
+
+    # Step 2: gradio_ask
+    if len(user_message) == 0:
+        return (
+            gr.update(interactive=True, placeholder="Input should not be empty!"),
+            chat_state,
+        )
+    chat_state = chat.ask(user_message, chat_state)
+
+    # Step 3: gradio_answer
+    llm_message, llm_message_token, chat_state = chat.answer(
+        conv=chat_state,
+        img_list=img_list,
+        max_new_tokens=1000,
+        num_beams=num_beams,
+        temperature=temperature,
+    )
+    llm_message = llm_message.replace("<s>", "")  # handle <s>
+
+    return llm_message, chat_state, img_list
+
+
+def handle_describe_video(
     gr_video,
     chat_state,
     num_segments,
     user_message,
     num_beams,
     temperature,
-    image_input=False
 ):
-
-    print(gr_video)
-    
-    # Step 1: upload_img
     chat_state = EasyDict(
         {"system": "", "roles": ("Human", "Assistant"), "messages": [], "sep": "###"}
     )
     img_list = []
 
-    if image_input:
-        if gr_img is None and gr_video is None:
-            return None, None, gr.update(interactive=True), chat_state, None
-    else:
-        if gr_img is None and gr_video is None:
-            return None, None, gr.update(interactive=True), chat_state, None
-            
-        if gr_video:
-            llm_message, img_list, chat_state = chat.upload_video(
-                gr_video, chat_state, img_list, num_segments
-            )
-        if gr_img:
-            llm_message, img_list, chat_state = chat.upload_img(
-                gr_img, chat_state, img_list
-            )
+    if gr_video is None:
+        return None, None, gr.update(interactive=True), chat_state, None
+
+    llm_message, img_list, chat_state = chat.upload_video(
+        gr_video, chat_state, img_list, num_segments
+    )
 
     # Step 2: gradio_ask
     if len(user_message) == 0:
@@ -162,17 +185,23 @@ with gr.Blocks(
     with gr.Column():
         with gr.Column(visible=True) as video_upload:
             with gr.Column(elem_id="image") as img_part:
-                with gr.Tab("Video", elem_id="video_tab"):
-                    up_video = gr.Video(
-                        interactive=True, include_audio=True, elem_id="video_upload"
-                    )  # .style(height=320)
-                with gr.Tab("Image", elem_id="image_tab"):
-                    up_image = gr.Image(
-                        type="pil", interactive=True, elem_id="image_upload"
-                    )  # .style(height=320)
-            describe_button = gr.Button(
-                value="Describe the input", interactive=True, variant="primary"
-            )
+                with gr.Row():
+                    with gr.Column():
+                        up_video = gr.Video(
+                            interactive=True, include_audio=True, elem_id="video_upload"
+                        )
+
+                        describe_video_button = gr.Button(
+                            value="Describe Video", interactive=True, variant="primary"
+                        )
+                    with gr.Column():
+                        up_image = gr.Image(
+                            type="pil", interactive=True, elem_id="image_upload"
+                        )
+
+                        describe_image_button = gr.Button(
+                            value="Describe Image", interactive=True, variant="primary"
+                        )
 
             num_beams = gr.Slider(
                 minimum=1,
@@ -213,22 +242,34 @@ with gr.Blocks(
                 )
             )
             img_list = gr.State()
-            # chatbot = gr.Chatbot(elem_id="chatbot", label="VideoChat")
-            llama_output = gr.Textbox(lines=5, placeholder='Chat goes here...', readonly=True)
-            with gr.Row():
-                with gr.Column():
-                    text_input = gr.Textbox(
+
+            with gr.Column():
+                text_input = gr.Textbox(
                         "describe the image/video in details",
                         show_label=False,
                     ).style(container=False)
+                llama_output = gr.Textbox(
+                    lines=5, placeholder="Chat goes here...", readonly=True
+                )
 
 
     chat = init_model()
 
-    describe_button.click(
-        handle_describe_button,
+    describe_image_button.click(
+        handle_describe_image,
         [
             up_image,
+            chat_state,
+            text_input,
+            num_beams,
+            temperature,
+        ],
+        [llama_output, chat_state, img_list],
+    )
+
+    describe_video_button.click(
+        handle_describe_video,
+        [
             up_video,
             chat_state,
             num_segments,
@@ -238,5 +279,4 @@ with gr.Blocks(
         ],
         [llama_output, chat_state, img_list],
     )
-
 demo.launch(server_name="0.0.0.0", enable_queue=True)
