@@ -1,4 +1,5 @@
 # Simplified interface to be used with Gradio client (for simple questions only).
+
 import torch
 import gradio as gr
 from gradio.themes.utils import colors, fonts, sizes
@@ -165,6 +166,56 @@ title = ""
 description = ""
 
 
+def handle_describe_button(
+    gr_img,
+    gr_video,
+    chat_state,
+    num_segments,
+    user_message,
+    chatbot,
+    num_beams,
+    temperature,
+):
+    # Step 1: upload_img
+    chat_state = EasyDict(
+        {"system": "", "roles": ("Human", "Assistant"), "messages": [], "sep": "###"}
+    )
+    img_list = []
+    if gr_img is None and gr_video is None:
+        return None, None, gr.update(interactive=True), chat_state, None
+    if gr_video:
+        llm_message, img_list, chat_state = chat.upload_video(
+            gr_video, chat_state, img_list, num_segments
+        )
+    if gr_img:
+        llm_message, img_list, chat_state = chat.upload_img(
+            gr_img, chat_state, img_list
+        )
+
+    # Step 2: gradio_ask
+    if len(user_message) == 0:
+        return (
+            gr.update(interactive=True, placeholder="Input should not be empty!"),
+            chatbot,
+            chat_state,
+        )
+    chat_state = chat.ask(user_message, chat_state)
+    chatbot = chatbot + [[user_message, None]]
+
+    # Step 3: gradio_answer
+    llm_message, llm_message_token, chat_state = chat.answer(
+        conv=chat_state,
+        img_list=img_list,
+        max_new_tokens=1000,
+        num_beams=num_beams,
+        temperature=temperature,
+    )
+    llm_message = llm_message.replace("<s>", "")  # handle <s>
+    chatbot[-1][1] = llm_message
+
+    return chatbot, chat_state, img_list
+
+
 with gr.Blocks(
     title="VideoChat!",
     theme=gvlabtheme,
@@ -187,7 +238,6 @@ with gr.Blocks(
             describe_button = gr.Button(
                 value="Describe the input", interactive=True, variant="primary"
             )
-
 
             num_beams = gr.Slider(
                 minimum=1,
@@ -231,7 +281,8 @@ with gr.Blocks(
             chatbot = gr.Chatbot(elem_id="chatbot", label="VideoChat")
             with gr.Row():
                 with gr.Column(scale=0.7):
-                    text_input = gr.Textbox("describe the image/video in details",
+                    text_input = gr.Textbox(
+                        "describe the image/video in details",
                         show_label=False,
                     ).style(container=False)
                 with gr.Column(scale=0.15, min_width=0):
@@ -242,15 +293,30 @@ with gr.Blocks(
     chat = init_model()
 
     describe_button.click(
-        upload_img,
-        [up_image, up_video, chat_state, num_segments],
-        [up_image, up_video, text_input, describe_button, chat_state, img_list],
-    ).then(
-        gradio_ask, [text_input, chatbot, chat_state], [text_input, chatbot, chat_state]
-    ).then(
-        gradio_answer,
-        [up_image, up_video, chatbot, chat_state, img_list, num_beams, temperature],
+        handle_describe_button,
+        [
+            up_image,
+            up_video,
+            chat_state,
+            num_segments,
+            text_input,
+            chatbot,
+            num_beams,
+            temperature,
+        ],
         [chatbot, chat_state, img_list],
     )
+
+    # describe_button.click(
+    #     upload_img,
+    #     [up_image, up_video, chat_state, num_segments],
+    #     [up_image, up_video, text_input, describe_button, chat_state, img_list],
+    # ).then(
+    #     gradio_ask, [text_input, chatbot, chat_state], [text_input, chatbot, chat_state]
+    # ).then(
+    #     gradio_answer,
+    #     [up_image, up_video, chatbot, chat_state, img_list, num_beams, temperature],
+    #     [chatbot, chat_state, img_list],
+    # )
 
 demo.launch(server_name="0.0.0.0", enable_queue=True)
